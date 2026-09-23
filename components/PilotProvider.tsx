@@ -139,10 +139,15 @@ export function PilotProvider({ children }: { children: ReactNode }) {
               <span className="eyebrow">PILOT REQUEST RECEIVED</span>
               <h2 id="pilot-title">Thanks — we’ll be in touch.</h2>
               <p>
-                Your pilot request has been received. We’ll review your order flow and follow up about the next step.
+                Your pilot request is safely in. We’ll review the details and follow up by email if the workflow looks like a fit.
               </p>
+              <div className="success-steps" aria-label="What happens next">
+                <div><span>01</span><strong>We review your order flow</strong></div>
+                <div><span>02</span><strong>We confirm pilot fit by email</strong></div>
+                <div><span>03</span><strong>Then we test a sample order together</strong></div>
+              </div>
               <button type="button" className="button button-dark" onClick={closePilot}>
-                Close
+                Done
               </button>
             </div>
           ) : (
@@ -194,7 +199,10 @@ export function PilotProvider({ children }: { children: ReactNode }) {
               >
                 {submitState === "submitting" ? "Sending…" : "Request pilot"}
               </button>
-              <p className="form-note">No credit card required.</p>
+              <p className="form-note">
+                No credit card required. By submitting, you agree that we may use these details to respond to your pilot request.{" "}
+                <a href="/privacy">Privacy</a>
+              </p>
             </form>
           )}
         </div>
