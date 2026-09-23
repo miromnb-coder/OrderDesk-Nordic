@@ -36,9 +36,9 @@ for (const id of ["how-it-works", "visma-net", "security", "pricing"]) {
   assert((await page.locator(`#${id}`).count()) === 1, `Missing navigation target #${id}`);
 }
 
-const orders = page.getByLabel("Orders per day");
-const minutes = page.getByLabel("Average entry time");
-const days = page.getByLabel("Working days / month");
+const orders = page.getByRole("spinbutton", { name: "Orders per day", exact: true });
+const minutes = page.getByRole("spinbutton", { name: "Average entry time", exact: true });
+const days = page.getByRole("spinbutton", { name: "Working days / month", exact: true });
 await orders.fill("30");
 await minutes.fill("6");
 await days.fill("20");
@@ -56,7 +56,7 @@ const demoButton = page.getByRole("button", { name: "Book a demo" }).first();
 await demoButton.focus();
 await page.keyboard.press("Enter");
 const dialog = page.getByRole("dialog");
-assert(await dialog.isVisible(), "Pilot dialog did not open from keyboard");
+assert(await dialog.isVisible(), "Pilot dialog did not open from keyboard");\nawait page.waitForTimeout(30);
 assert(
   await page.getByLabel("Work email").evaluate((element) => element === document.activeElement),
   "Pilot dialog did not move focus to the first field",
