@@ -9,7 +9,7 @@ on:
 
 jobs:
   bootstrap:
-    if: ${{ github.actor != 'github-actions[bot]' }}
+    if: ${{ github.actor != 'github-actions[bot]' && hashFiles('.bootstrap/chunk-00') != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
