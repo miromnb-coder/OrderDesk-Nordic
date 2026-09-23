@@ -542,6 +542,46 @@ a { color: inherit; text-decoration: none; }
 .pilot-success { min-height: 370px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; }
 .pilot-success .button { margin-top: 8px; }
 
+
+/* Desktop refinement: preserve the generous outer canvas and editorial breathing room
+   visible in the primary art-direction reference. */
+@media (min-width: 1181px) {
+  .page-shell {
+    width: min(1480px, calc(100% - 88px));
+    margin: 38px auto;
+  }
+
+  .hero {
+    min-height: 640px;
+    padding-top: 108px;
+    padding-bottom: 82px;
+  }
+
+  .process-strip {
+    padding-top: 44px;
+    padding-bottom: 58px;
+    gap: 96px;
+  }
+
+  .editorial-section {
+    padding-top: 82px;
+    padding-bottom: 82px;
+  }
+
+  .story-grid { gap: 76px; }
+  .memory-block { padding-left: 68px; }
+
+  .workflow-section {
+    padding-top: 78px;
+    padding-bottom: 70px;
+  }
+
+  .roi-pilot-section {
+    padding-top: 46px;
+    padding-bottom: 18px;
+  }
+}
+
 @media (max-width: 1180px) {
   .page-shell { width: calc(100% - 28px); margin: 14px auto; }
   .section-pad, .site-header, .site-footer { width: min(100% - 72px, 1120px); }
