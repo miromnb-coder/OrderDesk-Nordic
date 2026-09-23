@@ -24,7 +24,7 @@ jobs:
           base64 --decode /tmp/orderdesk.b64 > /tmp/orderdesk.tgz
           tar -xzf /tmp/orderdesk.tgz
           rm -rf .bootstrap
-          rm -f .github/workflows/bootstrap.yml
+          rm -f .github/workflows/qa.yml
 
       - name: Commit site
         shell: bash
