@@ -1,5 +1,20 @@
 # OrderDesk Nordic
 
-Public marketing website for OrderDesk, built with Next.js App Router, React, TypeScript and Tailwind CSS.
+Public marketing site for OrderDesk, a B2B order-entry automation product for distributors using Visma Net workflows.
 
-The complete implementation and verified setup instructions are being added in the next commit.
+## Local development
+
+```bash
+npm install
+npm run dev
+```
+
+## Quality checks
+
+```bash
+npm run lint
+npm run typecheck
+npm run build
+```
+
+The pilot request form is intentionally frontend-only in this repository. It validates inputs and displays a development-safe confirmation without claiming that data was sent.
