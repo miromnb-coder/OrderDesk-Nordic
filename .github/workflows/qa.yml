@@ -1,0 +1,35 @@
+name: QA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: Start production server
+        run: |
+          npm start > /tmp/orderdesk-next.log 2>&1 &
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:3000 >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          cat /tmp/orderdesk-next.log
+          exit 1
+      - run: npm run qa:screenshots
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orderdesk-qa-screenshots
+          path: qa-screenshots
