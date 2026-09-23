@@ -17,22 +17,27 @@ type PilotContextValue = {
   openPilot: () => void;
 };
 
+type SubmitState = "idle" | "submitting" | "success" | "error";
+
 const PilotContext = createContext<PilotContextValue | null>(null);
+
+const SUPABASE_URL = "https://avwplztfgixsgfnymgoe.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_MkxwcMYqbrVtp8XhhTU1gw_CUG5sPE5";
 
 export function PilotProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
+  const [submitState, setSubmitState] = useState<SubmitState>("idle");
   const dialogRef = useRef<HTMLDialogElement>(null);
   const firstFieldRef = useRef<HTMLInputElement>(null);
 
   const openPilot = useCallback(() => {
-    setSubmitted(false);
+    setSubmitState("idle");
     setOpen(true);
   }, []);
 
   const closePilot = useCallback(() => {
     setOpen(false);
-    setSubmitted(false);
+    setSubmitState("idle");
   }, []);
 
   useEffect(() => {
@@ -51,14 +56,56 @@ export function PilotProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(() => ({ openPilot }), [openPilot]);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
     const form = event.currentTarget;
     if (!form.checkValidity()) {
       form.reportValidity();
       return;
     }
-    setSubmitted(true);
+
+    const data = new FormData(form);
+    const honeypot = String(data.get("website") ?? "").trim();
+
+    // Silently accept bot submissions without storing them.
+    if (honeypot) {
+      setSubmitState("success");
+      form.reset();
+      return;
+    }
+
+    const payload = {
+      work_email: String(data.get("email") ?? "").trim(),
+      company: String(data.get("company") ?? "").trim(),
+      name: String(data.get("name") ?? "").trim() || null,
+      erp: String(data.get("erp") ?? "").trim(),
+      orders_per_day: Number(data.get("ordersPerDay")),
+    };
+
+    setSubmitState("submitting");
+
+    try {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/pilot_leads`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_PUBLISHABLE_KEY,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Lead capture failed with status ${response.status}`);
+      }
+
+      form.reset();
+      setSubmitState("success");
+    } catch (error) {
+      console.error("OrderDesk pilot request failed", error);
+      setSubmitState("error");
+    }
   }
 
   return (
@@ -87,52 +134,67 @@ export function PilotProvider({ children }: { children: ReactNode }) {
             <CloseIcon />
           </button>
 
-          {submitted ? (
+          {submitState === "success" ? (
             <div className="pilot-success" role="status">
-              <span className="eyebrow">PILOT REQUEST</span>
-              <h2 id="pilot-title">Ready for the next connection.</h2>
+              <span className="eyebrow">PILOT REQUEST RECEIVED</span>
+              <h2 id="pilot-title">Thanks — we’ll be in touch.</h2>
               <p>
-                Pilot request form is ready for backend connection. No data was sent from this marketing site.
+                Your pilot request has been received. We’ll review your order flow and follow up about the next step.
               </p>
               <button type="button" className="button button-dark" onClick={closePilot}>
                 Close
               </button>
             </div>
           ) : (
-            <form className="pilot-form" onSubmit={handleSubmit} noValidate={false}>
+            <form className="pilot-form" onSubmit={handleSubmit}>
               <span className="eyebrow">START WITH A REAL ORDER</span>
               <h2 id="pilot-title">Request an OrderDesk pilot.</h2>
               <p className="dialog-intro">
-                Tell us a little about your order flow. Submitting this form only expresses interest in a pilot.
+                Tell us a little about your order flow. We’ll use these details only to evaluate and follow up on your pilot request.
               </p>
 
               <div className="field-grid">
                 <label className="field field-wide">
                   <span>Work email</span>
-                  <input ref={firstFieldRef} type="email" name="email" autoComplete="email" required />
+                  <input ref={firstFieldRef} type="email" name="email" autoComplete="email" required maxLength={320} />
                 </label>
                 <label className="field">
                   <span>Company</span>
-                  <input type="text" name="company" autoComplete="organization" required />
+                  <input type="text" name="company" autoComplete="organization" required maxLength={200} />
                 </label>
                 <label className="field">
                   <span>Name <em>Optional</em></span>
-                  <input type="text" name="name" autoComplete="name" />
+                  <input type="text" name="name" autoComplete="name" maxLength={200} />
                 </label>
                 <label className="field">
                   <span>ERP</span>
-                  <input type="text" name="erp" placeholder="e.g. Visma Net" required />
+                  <input type="text" name="erp" placeholder="e.g. Visma Net" required maxLength={120} />
                 </label>
                 <label className="field">
                   <span>Approximate orders per day</span>
                   <input type="number" name="ordersPerDay" inputMode="numeric" min="1" max="100000" required />
                 </label>
+
+                <label className="pilot-honeypot" aria-hidden="true">
+                  <span>Website</span>
+                  <input type="text" name="website" tabIndex={-1} autoComplete="off" />
+                </label>
               </div>
 
-              <button type="submit" className="button button-dark dialog-submit">
-                Request pilot
+              {submitState === "error" && (
+                <p className="form-error" role="alert">
+                  We couldn’t send your request. Please try again in a moment.
+                </p>
+              )}
+
+              <button
+                type="submit"
+                className="button button-dark dialog-submit"
+                disabled={submitState === "submitting"}
+              >
+                {submitState === "submitting" ? "Sending…" : "Request pilot"}
               </button>
-              <p className="form-note">Frontend-only demo. No request is transmitted yet.</p>
+              <p className="form-note">No credit card required.</p>
             </form>
           )}
         </div>
