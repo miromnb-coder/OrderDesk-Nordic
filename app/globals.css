@@ -365,7 +365,22 @@ a { color: inherit; text-decoration: none; }
   background: rgba(255,255,255,.10);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.58);
 }
-.memory-icon { width: 32px; height: 32px; border-radius: 50%; background: #efeee9; display: grid; place-items: center; font-size: 15px; }
+.memory-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, rgba(255,255,255,.9), rgba(23,23,21,.035));
+  border: 1px solid rgba(23,23,21,.055);
+  color: rgba(23,23,21,.88);
+  display: grid;
+  place-items: center;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.75);
+}
+.memory-icon svg {
+  width: 19px;
+  height: 19px;
+  stroke-width: 1.8;
+}
 .memory-card h3 { margin: 22px 0 14px; font-size: 13px; line-height: 1.25; font-weight: 580; }
 .memory-card p { margin: 0; font-size: 12px; line-height: 1.45; color: #74746e; }
 .memory-card strong { display: block; margin-top: 13px; font-size: 10px; line-height: 1.5; font-weight: 560; color: #5b5b56; }
