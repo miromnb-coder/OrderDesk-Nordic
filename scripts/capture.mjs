@@ -56,7 +56,8 @@ const demoButton = page.getByRole("button", { name: "Book a demo" }).first();
 await demoButton.focus();
 await page.keyboard.press("Enter");
 const dialog = page.getByRole("dialog");
-assert(await dialog.isVisible(), "Pilot dialog did not open from keyboard");\nawait page.waitForTimeout(30);
+assert(await dialog.isVisible(), "Pilot dialog did not open from keyboard");
+await page.waitForTimeout(30);
 assert(
   await page.getByLabel("Work email").evaluate((element) => element === document.activeElement),
   "Pilot dialog did not move focus to the first field",
