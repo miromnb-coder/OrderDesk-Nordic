@@ -37,7 +37,7 @@ for (const id of ["how-it-works", "visma-net", "security", "pricing"]) {
 }
 
 const orders = page.getByRole("spinbutton", { name: "Orders per day", exact: true });
-const minutes = page.getByRole("spinbutton", { name: "Average entry time", exact: true });
+const minutes = page.locator("label.calc-field").filter({ hasText: "Average entry time" }).locator("input");
 const days = page.getByRole("spinbutton", { name: "Working days / month", exact: true });
 await orders.fill("30");
 await minutes.fill("6");
