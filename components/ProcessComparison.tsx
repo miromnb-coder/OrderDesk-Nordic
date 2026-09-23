@@ -1,4 +1,4 @@
-import { ClockIcon } from "@/components/icons";
+import { BoxIcon, ClockIcon, DatabaseIcon, MailIcon } from "@/components/icons";
 
 const before = [
   "Email received",
@@ -54,20 +54,20 @@ function CustomerMemory() {
 
       <div className="memory-flow" aria-label="Customer-specific product memory example">
         <article className="memory-card">
-          <div className="memory-icon">✉</div>
+          <div className="memory-icon" aria-hidden="true"><MailIcon /></div>
           <h3>Customer&apos;s PO</h3>
           <p>PUMP-37A</p>
         </article>
         <span className="flow-arrow">→</span>
         <article className="memory-card memory-card-wide">
-          <div className="memory-icon">◉</div>
+          <div className="memory-icon" aria-hidden="true"><DatabaseIcon /></div>
           <h3>OrderDesk customer<br />memory</h3>
           <p>Putkiurakointi Oy</p>
           <strong>PUMP-37A&nbsp; → &nbsp;GRU-98561418</strong>
         </article>
         <span className="flow-arrow">→</span>
         <article className="memory-card">
-          <div className="memory-icon">□</div>
+          <div className="memory-icon" aria-hidden="true"><BoxIcon /></div>
           <h3>Your catalogue</h3>
           <p>Grundfos ALPHA2 25-60</p>
         </article>
