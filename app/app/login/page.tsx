@@ -21,7 +21,11 @@ export default function LoginPage() {
 
     try {
       if (mode === "signup") {
-        const { data, error } = await supabase.auth.signUp({\n          email,\n          password,\n          options: { emailRedirectTo: `${window.location.origin}/app` },\n        });
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: `${window.location.origin}/app` },
+        });
         if (error) throw error;
 
         if (!data.session) {
