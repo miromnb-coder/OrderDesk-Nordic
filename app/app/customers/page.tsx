@@ -6,10 +6,13 @@ import { supabase } from "@/lib/supabase-browser";
 type Mapping = {
   id: string;
   customer_sku: string;
+  customer_description: string | null;
   confidence: number;
   times_used: number;
-  customer_id: string;
-  product_id: string;
+  source: string;
+  updated_at: string;
+  customer: { name: string } | null;
+  product: { sku: string; name: string } | null;
 };
 
 export default function CustomerMemoryPage() {
@@ -20,11 +23,13 @@ export default function CustomerMemoryPage() {
     async function load() {
       const { data } = await supabase
         .from("customer_product_mappings")
-        .select("id, customer_sku, confidence, times_used, customer_id, product_id")
-        .order("times_used", { ascending: false });
-      setMappings((data as Mapping[] | null) ?? []);
+        .select("id, customer_sku, customer_description, confidence, times_used, source, updated_at, customer:customers!customer_product_mappings_customer_id_fkey(name), product:products!customer_product_mappings_product_id_fkey(sku,name)")
+        .order("updated_at", { ascending: false });
+
+      setMappings((data as unknown as Mapping[] | null) ?? []);
       setLoading(false);
     }
+
     load();
   }, []);
 
@@ -34,7 +39,7 @@ export default function CustomerMemoryPage() {
         <div>
           <span className="od-kicker">CUSTOMER MEMORY</span>
           <h1>Product mappings</h1>
-          <p>Confirmed customer-specific aliases will appear here as the review workflow learns.</p>
+          <p>Every remembered correction becomes a reusable customer-specific SKU mapping.</p>
         </div>
       </header>
 
@@ -52,20 +57,25 @@ export default function CustomerMemoryPage() {
         ) : mappings.length === 0 ? (
           <div className="od-empty-state">
             <strong>No customer mappings yet.</strong>
-            <span>Mappings will be created when reviewed order lines are confirmed and remembered for a customer.</span>
+            <span>Confirm a review line and keep “Remember for this customer” enabled.</span>
           </div>
         ) : (
           <div className="od-mapping-table">
             <div className="od-mapping-head">
-              <span>Customer SKU</span><span>Product</span><span>Customer</span><span>Used</span><span>Confidence</span>
+              <span>Customer SKU</span>
+              <span>Your SKU</span>
+              <span>Product</span>
+              <span>Customer</span>
+              <span>Confidence</span>
             </div>
-            {mappings.map((m) => (
-              <div className="od-mapping-row" key={m.id}>
-                <strong>{m.customer_sku}</strong>
-                <strong>{m.product_id}</strong>
-                <span>{m.customer_id}</span>
-                <span>{m.times_used} orders</span>
-                <span className="od-confidence-success">{m.confidence}%</span>
+
+            {mappings.map((mapping) => (
+              <div className="od-mapping-row" key={mapping.id}>
+                <strong>{mapping.customer_sku}</strong>
+                <strong>{mapping.product?.sku || "—"}</strong>
+                <span>{mapping.product?.name || mapping.customer_description || "—"}</span>
+                <span>{mapping.customer?.name || "—"}</span>
+                <span className="od-confidence-success">{mapping.confidence}%</span>
               </div>
             ))}
           </div>
