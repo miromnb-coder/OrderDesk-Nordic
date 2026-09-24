@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
 
@@ -17,6 +17,7 @@ type Order = {
   overall_confidence: number | null;
   received_at: string;
   processed_at: string | null;
+  approved_at: string | null;
   error_message: string | null;
   extraction_version: string | null;
 };
@@ -41,6 +42,14 @@ type EventRow = {
   created_at: string;
 };
 
+type Product = {
+  id: string;
+  sku: string;
+  name: string;
+  manufacturer: string | null;
+  unit: string | null;
+};
+
 export default function OrderReviewPage() {
   const params = useParams<{ id: string }>();
   const [order, setOrder] = useState<Order | null>(null);
@@ -50,6 +59,13 @@ export default function OrderReviewPage() {
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [processMessage, setProcessMessage] = useState("");
+  const [editingLineId, setEditingLineId] = useState<string | null>(null);
+  const [catalogue, setCatalogue] = useState<Product[]>([]);
+  const [catalogueLoading, setCatalogueLoading] = useState(false);
+  const [catalogueQuery, setCatalogueQuery] = useState("");
+  const [rememberMatch, setRememberMatch] = useState(true);
+  const [savingMatch, setSavingMatch] = useState<string | null>(null);
+  const [approving, setApproving] = useState(false);
 
   const load = useCallback(async () => {
     if (!params.id) return;
@@ -57,7 +73,7 @@ export default function OrderReviewPage() {
 
     const { data: orderRow } = await supabase
       .from("orders")
-      .select("id, organization_id, customer_id, raw_customer_name, po_number, source_file_name, source_storage_path, status, overall_confidence, received_at, processed_at, error_message, extraction_version")
+      .select("id, organization_id, customer_id, raw_customer_name, po_number, source_file_name, source_storage_path, status, overall_confidence, received_at, processed_at, approved_at, error_message, extraction_version")
       .eq("id", params.id)
       .maybeSingle();
 
@@ -100,6 +116,21 @@ export default function OrderReviewPage() {
     load();
   }, [load]);
 
+  const filteredCatalogue = useMemo(() => {
+    const query = catalogueQuery.trim().toLowerCase();
+    if (!query) return catalogue.slice(0, 12);
+
+    return catalogue
+      .filter((product) =>
+        [product.sku, product.name, product.manufacturer]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(query)
+      )
+      .slice(0, 12);
+  }, [catalogue, catalogueQuery]);
+
   async function reprocess() {
     if (!order) return;
     setProcessing(true);
@@ -135,6 +166,72 @@ export default function OrderReviewPage() {
     }
   }
 
+  async function openCatalogue(lineId: string) {
+    setEditingLineId(lineId);
+    setCatalogueQuery("");
+    setRememberMatch(true);
+
+    if (catalogue.length) return;
+
+    setCatalogueLoading(true);
+    const { data } = await supabase
+      .from("products")
+      .select("id, sku, name, manufacturer, unit")
+      .eq("active", true)
+      .order("name", { ascending: true })
+      .limit(500);
+
+    setCatalogue((data as Product[] | null) ?? []);
+    setCatalogueLoading(false);
+  }
+
+  async function confirmProduct(lineId: string, productId: string) {
+    setSavingMatch(productId);
+    setProcessMessage("");
+
+    const { data, error } = await supabase.rpc("confirm_orderdesk_line_match", {
+      target_order_line_id: lineId,
+      target_product_id: productId,
+      remember_for_customer: rememberMatch,
+    });
+
+    if (error) {
+      setProcessMessage(error.message);
+      setSavingMatch(null);
+      return;
+    }
+
+    const remembered = Boolean(data?.remembered);
+    setProcessMessage(
+      remembered
+        ? "Match confirmed and saved to Customer Memory."
+        : "Match confirmed for this order."
+    );
+    setEditingLineId(null);
+    setSavingMatch(null);
+    await load();
+  }
+
+  async function approveOrder() {
+    if (!order) return;
+    setApproving(true);
+    setProcessMessage("");
+
+    const { error } = await supabase.rpc("approve_orderdesk_order", {
+      target_order_id: order.id,
+    });
+
+    if (error) {
+      setProcessMessage(error.message);
+      setApproving(false);
+      return;
+    }
+
+    setProcessMessage("Order approved. It is ready for the future Visma Net creation step.");
+    setApproving(false);
+    await load();
+  }
+
   if (loading) {
     return <div className="od-page"><div className="od-empty-state">Loading order…</div></div>;
   }
@@ -153,6 +250,8 @@ export default function OrderReviewPage() {
 
   const title = order.po_number ? `PO #${order.po_number}` : order.source_file_name || "Incoming purchase order";
   const extractionPending = lines.length === 0;
+  const unresolvedLines = lines.filter((line) => !["matched", "confirmed"].includes(line.review_status)).length;
+  const canApprove = order.status === "ready" && unresolvedLines === 0 && !order.approved_at;
 
   return (
     <div className="od-page od-review-page">
@@ -167,13 +266,18 @@ export default function OrderReviewPage() {
         </div>
         <div className="od-review-actions">
           <span className={`od-status-pill od-status-${order.status}`}>
-            {order.status.replaceAll("_", " ")}
+            {order.approved_at ? "approved" : order.status.replaceAll("_", " ")}
           </span>
           <button className="od-secondary-button" type="button" onClick={reprocess} disabled={processing}>
             {processing ? "Processing…" : "Reprocess"}
           </button>
-          <button className="od-primary-button" type="button" disabled={extractionPending || order.status !== "ready"}>
-            Approve order
+          <button
+            className="od-primary-button"
+            type="button"
+            onClick={approveOrder}
+            disabled={!canApprove || approving}
+          >
+            {order.approved_at ? "Approved" : approving ? "Approving…" : "Approve order"}
           </button>
         </div>
       </header>
@@ -251,24 +355,99 @@ export default function OrderReviewPage() {
                   <span>Confidence</span>
                 </div>
 
-                {lines.map((line) => (
-                  <div className={`od-line-row ${line.review_status === "needs_review" ? "needs-review" : ""}`} key={line.id}>
-                    <div>
-                      <strong>{line.raw_sku || `Line ${line.line_number}`}</strong>
-                      <span>{line.raw_description || "No description"}</span>
+                {lines.map((line) => {
+                  const needsReview = line.review_status === "needs_review";
+                  const editorOpen = editingLineId === line.id;
+
+                  return (
+                    <div className={`od-line-row ${needsReview ? "needs-review" : ""} ${editorOpen ? "has-editor" : ""}`} key={line.id}>
+                      <div>
+                        <strong>{line.raw_sku || `Line ${line.line_number}`}</strong>
+                        <span>{line.raw_description || "No description"}</span>
+                      </div>
+                      <div>
+                        <strong>{line.matched_product?.sku || "No catalogue match"}</strong>
+                        <span>{line.matched_product?.name || "Manual product selection required"}</span>
+                      </div>
+                      <div className="od-qty">{line.raw_quantity} {line.raw_unit || ""}</div>
+                      <div>
+                        {line.match_confidence !== null
+                          ? <span className={line.match_confidence >= 98 ? "od-confidence-success" : "od-confidence-warning"}>{line.match_confidence}%</span>
+                          : <span>—</span>}
+                      </div>
+
+                      {needsReview && !editorOpen && (
+                        <div className="od-line-review-action">
+                          <div>
+                            <span>Needs review</span>
+                            <strong>{line.matched_product ? "Check the suggested match" : "Choose a catalogue product"}</strong>
+                          </div>
+                          <button className="od-secondary-button" type="button" onClick={() => openCatalogue(line.id)}>
+                            Review product
+                          </button>
+                        </div>
+                      )}
+
+                      {editorOpen && (
+                        <div className="od-catalogue-editor">
+                          <div className="od-catalogue-editor-head">
+                            <div>
+                              <span className="od-kicker">CATALOGUE</span>
+                              <strong>Select the correct product</strong>
+                            </div>
+                            <button type="button" className="od-text-button" onClick={() => setEditingLineId(null)}>Close</button>
+                          </div>
+
+                          <input
+                            className="od-catalogue-search"
+                            value={catalogueQuery}
+                            onChange={(event) => setCatalogueQuery(event.target.value)}
+                            placeholder="Search SKU, product or manufacturer"
+                            autoFocus
+                          />
+
+                          <label className="od-remember-toggle">
+                            <input
+                              type="checkbox"
+                              checked={rememberMatch}
+                              onChange={(event) => setRememberMatch(event.target.checked)}
+                            />
+                            <span>
+                              <strong>Remember for this customer</strong>
+                              <em>Future orders with {line.raw_sku || "this customer SKU"} can match automatically.</em>
+                            </span>
+                          </label>
+
+                          <div className="od-catalogue-results">
+                            {catalogueLoading ? (
+                              <div className="od-catalogue-empty">Loading catalogue…</div>
+                            ) : filteredCatalogue.length === 0 ? (
+                              <div className="od-catalogue-empty">No products found.</div>
+                            ) : (
+                              filteredCatalogue.map((product) => (
+                                <button
+                                  type="button"
+                                  className={product.id === line.matched_product_id ? "is-suggested" : undefined}
+                                  onClick={() => confirmProduct(line.id, product.id)}
+                                  disabled={savingMatch !== null}
+                                  key={product.id}
+                                >
+                                  <span>
+                                    <strong>{product.sku}</strong>
+                                    <em>{product.name}</em>
+                                  </span>
+                                  <span>
+                                    {product.id === line.matched_product_id ? "Suggested" : product.manufacturer || "Select"}
+                                  </span>
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div>
-                      <strong>{line.matched_product?.sku || "No catalogue match"}</strong>
-                      <span>{line.matched_product?.name || "Manual product selection required"}</span>
-                    </div>
-                    <div className="od-qty">{line.raw_quantity} {line.raw_unit || ""}</div>
-                    <div>
-                      {line.match_confidence !== null
-                        ? <span className={line.match_confidence >= 98 ? "od-confidence-success" : "od-confidence-warning"}>{line.match_confidence}%</span>
-                        : <span>—</span>}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </>
           )}
