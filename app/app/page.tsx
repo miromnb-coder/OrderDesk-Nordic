@@ -10,6 +10,7 @@ type Order = {
   po_number: string | null;
   source_type: "pdf" | "excel" | "email" | "manual";
   source_file_name: string | null;
+  raw_customer_name: string | null;
   status: "received" | "processing" | "needs_review" | "ready" | "creating" | "created" | "failed";
   overall_confidence: number | null;
   received_at: string;
@@ -47,7 +48,7 @@ export default function OrdersPage() {
       supabase.from("organizations").select("name").eq("id", membership.organization_id).single(),
       supabase
         .from("orders")
-        .select("id, po_number, source_type, source_file_name, status, overall_confidence, received_at")
+        .select("id, po_number, source_type, source_file_name, raw_customer_name, status, overall_confidence, received_at")
         .eq("organization_id", membership.organization_id)
         .order("received_at", { ascending: false })
         .limit(50),
@@ -119,7 +120,7 @@ export default function OrdersPage() {
                   <span className={`od-status-dot od-status-${order.status}`} />
                   <div>
                     <strong>{order.po_number || order.source_file_name || "Incoming purchase order"}</strong>
-                    <span>{order.source_file_name || "No source filename"}</span>
+                    <span>{order.raw_customer_name || order.source_file_name || "Customer not matched yet"}</span>
                   </div>
                 </div>
 
