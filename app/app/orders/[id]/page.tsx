@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
+import { VismaPayloadPanel } from "@/components/product/VismaPayloadPanel";
 
 type Order = {
   id: string;
@@ -283,6 +284,8 @@ export default function OrderReviewPage() {
       </header>
 
       {processMessage && <div className="od-process-result">{processMessage}</div>}
+
+      <VismaPayloadPanel orderId={order.id} approvedAt={order.approved_at} orderStatus={order.status} />
 
       <div className="od-review-grid">
         <section className="od-source-panel">
