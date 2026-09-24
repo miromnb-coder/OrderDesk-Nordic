@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
 
 type Order = {
   id: string;
   organization_id: string;
+  customer_id: string | null;
+  raw_customer_name: string | null;
   po_number: string | null;
   source_file_name: string | null;
   source_storage_path: string | null;
@@ -16,6 +18,7 @@ type Order = {
   received_at: string;
   processed_at: string | null;
   error_message: string | null;
+  extraction_version: string | null;
 };
 
 type OrderLine = {
@@ -28,6 +31,7 @@ type OrderLine = {
   match_confidence: number | null;
   review_status: string;
   matched_product_id: string | null;
+  matched_product: { sku: string; name: string } | null;
 };
 
 type EventRow = {
@@ -44,53 +48,92 @@ export default function OrderReviewPage() {
   const [events, setEvents] = useState<EventRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
+  const [processing, setProcessing] = useState(false);
+  const [processMessage, setProcessMessage] = useState("");
 
-  useEffect(() => {
-    async function load() {
-      if (!params.id) return;
+  const load = useCallback(async () => {
+    if (!params.id) return;
+    setLoading(true);
 
-      const { data: orderRow } = await supabase
-        .from("orders")
-        .select("id, organization_id, po_number, source_file_name, source_storage_path, status, overall_confidence, received_at, processed_at, error_message")
-        .eq("id", params.id)
-        .maybeSingle();
+    const { data: orderRow } = await supabase
+      .from("orders")
+      .select("id, organization_id, customer_id, raw_customer_name, po_number, source_file_name, source_storage_path, status, overall_confidence, received_at, processed_at, error_message, extraction_version")
+      .eq("id", params.id)
+      .maybeSingle();
 
-      if (!orderRow) {
-        setLoading(false);
-        return;
-      }
-
-      setOrder(orderRow as Order);
-
-      const [{ data: lineRows }, { data: eventRows }] = await Promise.all([
-        supabase
-          .from("order_lines")
-          .select("id, line_number, raw_sku, raw_description, raw_quantity, raw_unit, match_confidence, review_status, matched_product_id")
-          .eq("order_id", params.id)
-          .order("line_number", { ascending: true }),
-        supabase
-          .from("order_events")
-          .select("id, event_type, message, created_at")
-          .eq("order_id", params.id)
-          .order("created_at", { ascending: true }),
-      ]);
-
-      setLines((lineRows as OrderLine[] | null) ?? []);
-      setEvents((eventRows as EventRow[] | null) ?? []);
-
-      if (orderRow.source_storage_path) {
-        const { data: signed } = await supabase.storage
-          .from("order-files")
-          .createSignedUrl(orderRow.source_storage_path, 60 * 20);
-
-        if (signed?.signedUrl) setSourceUrl(signed.signedUrl);
-      }
-
+    if (!orderRow) {
+      setOrder(null);
       setLoading(false);
+      return;
     }
 
-    load();
+    setOrder(orderRow as Order);
+
+    const [{ data: lineRows }, { data: eventRows }] = await Promise.all([
+      supabase
+        .from("order_lines")
+        .select("id, line_number, raw_sku, raw_description, raw_quantity, raw_unit, match_confidence, review_status, matched_product_id, matched_product:products!order_lines_matched_product_id_fkey(sku,name)")
+        .eq("order_id", params.id)
+        .order("line_number", { ascending: true }),
+      supabase
+        .from("order_events")
+        .select("id, event_type, message, created_at")
+        .eq("order_id", params.id)
+        .order("created_at", { ascending: true }),
+    ]);
+
+    setLines((lineRows as unknown as OrderLine[] | null) ?? []);
+    setEvents((eventRows as EventRow[] | null) ?? []);
+
+    if (orderRow.source_storage_path) {
+      const { data: signed } = await supabase.storage
+        .from("order-files")
+        .createSignedUrl(orderRow.source_storage_path, 60 * 20);
+
+      if (signed?.signedUrl) setSourceUrl(signed.signedUrl);
+    }
+
+    setLoading(false);
   }, [params.id]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function reprocess() {
+    if (!order) return;
+    setProcessing(true);
+    setProcessMessage("");
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+
+    try {
+      const result = await fetch(
+        "https://avwplztfgixsgfnymgoe.supabase.co/functions/v1/process-order",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ order_id: order.id }),
+        }
+      );
+
+      const body = await result.json();
+      if (!result.ok) throw new Error(body?.error || "Processing failed.");
+
+      setProcessMessage(
+        `Extracted ${body.lines ?? 0} lines · ${body.product_matches ?? 0} product matches · ${body.overall_confidence ?? 0}% confidence`
+      );
+      await load();
+    } catch (error) {
+      setProcessMessage(error instanceof Error ? error.message : "Processing failed.");
+    } finally {
+      setProcessing(false);
+    }
+  }
 
   if (loading) {
     return <div className="od-page"><div className="od-empty-state">Loading order…</div></div>;
@@ -108,7 +151,7 @@ export default function OrderReviewPage() {
     );
   }
 
-  const title = order.po_number || order.source_file_name || "Incoming purchase order";
+  const title = order.po_number ? `PO #${order.po_number}` : order.source_file_name || "Incoming purchase order";
   const extractionPending = lines.length === 0;
 
   return (
@@ -118,17 +161,24 @@ export default function OrderReviewPage() {
           <Link href="/app" className="od-back-link">← Orders</Link>
           <span className="od-kicker">PURCHASE ORDER</span>
           <h1>{title}</h1>
-          <p>Received {new Date(order.received_at).toLocaleString()} · status {order.status.replaceAll("_", " ")}</p>
+          <p>
+            {order.raw_customer_name || "Customer not identified"} · received {new Date(order.received_at).toLocaleString()}
+          </p>
         </div>
         <div className="od-review-actions">
           <span className={`od-status-pill od-status-${order.status}`}>
             {order.status.replaceAll("_", " ")}
           </span>
-          <button className="od-primary-button" type="button" disabled={extractionPending}>
+          <button className="od-secondary-button" type="button" onClick={reprocess} disabled={processing}>
+            {processing ? "Processing…" : "Reprocess"}
+          </button>
+          <button className="od-primary-button" type="button" disabled={extractionPending || order.status !== "ready"}>
             Approve order
           </button>
         </div>
       </header>
+
+      {processMessage && <div className="od-process-result">{processMessage}</div>}
 
       <div className="od-review-grid">
         <section className="od-source-panel">
@@ -168,45 +218,59 @@ export default function OrderReviewPage() {
           {extractionPending ? (
             <div className="od-pipeline-state">
               <span className="od-kicker">PIPELINE STATUS</span>
-              <h3>PDF ingestion is working.</h3>
+              <h3>Waiting for structured lines.</h3>
               <p>
-                The file has been authenticated, stored privately and validated as a real PDF.
-                Structured order extraction is the next processing stage and has not been connected yet.
+                The source PDF is stored privately. Run processing to extract the PO number,
+                customer and line items, then match them against customer memory and the catalogue.
               </p>
               <div className="od-pipeline-steps">
                 <div className="is-done"><span>01</span><strong>Upload</strong><em>Complete</em></div>
                 <div className="is-done"><span>02</span><strong>PDF validation</strong><em>Complete</em></div>
-                <div><span>03</span><strong>Structured extraction</strong><em>Next</em></div>
+                <div><span>03</span><strong>Structured extraction</strong><em>Run</em></div>
                 <div><span>04</span><strong>Product matching</strong><em>Waiting</em></div>
               </div>
             </div>
           ) : (
-            <div className="od-line-table">
-              <div className="od-line-header">
-                <span>Customer line</span>
-                <span>Matched product</span>
-                <span>Qty</span>
-                <span>Confidence</span>
-              </div>
-              {lines.map((line) => (
-                <div className="od-line-row" key={line.id}>
-                  <div>
-                    <strong>{line.raw_sku || `Line ${line.line_number}`}</strong>
-                    <span>{line.raw_description || "No description"}</span>
-                  </div>
-                  <div>
-                    <strong>{line.matched_product_id ? "Matched catalogue item" : "Not matched yet"}</strong>
-                    <span>{line.review_status.replaceAll("_", " ")}</span>
-                  </div>
-                  <div className="od-qty">{line.raw_quantity} {line.raw_unit || ""}</div>
-                  <div>
-                    {line.match_confidence !== null
-                      ? <span className="od-confidence-success">{line.match_confidence}%</span>
-                      : <span>—</span>}
-                  </div>
+            <>
+              <div className="od-customer-match">
+                <div>
+                  <span>Extracted customer</span>
+                  <strong>{order.raw_customer_name || "Unknown customer"}</strong>
+                  <em>{order.customer_id ? "Matched to workspace customer" : "Needs customer review"}</em>
                 </div>
-              ))}
-            </div>
+                <span className={order.customer_id ? "od-confidence-success" : "od-confidence-warning"}>
+                  {order.customer_id ? "Matched" : "Review"}
+                </span>
+              </div>
+
+              <div className="od-line-table">
+                <div className="od-line-header">
+                  <span>Customer line</span>
+                  <span>Matched catalogue item</span>
+                  <span>Qty</span>
+                  <span>Confidence</span>
+                </div>
+
+                {lines.map((line) => (
+                  <div className={`od-line-row ${line.review_status === "needs_review" ? "needs-review" : ""}`} key={line.id}>
+                    <div>
+                      <strong>{line.raw_sku || `Line ${line.line_number}`}</strong>
+                      <span>{line.raw_description || "No description"}</span>
+                    </div>
+                    <div>
+                      <strong>{line.matched_product?.sku || "No catalogue match"}</strong>
+                      <span>{line.matched_product?.name || "Manual product selection required"}</span>
+                    </div>
+                    <div className="od-qty">{line.raw_quantity} {line.raw_unit || ""}</div>
+                    <div>
+                      {line.match_confidence !== null
+                        ? <span className={line.match_confidence >= 98 ? "od-confidence-success" : "od-confidence-warning"}>{line.match_confidence}%</span>
+                        : <span>—</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
 
           <div className="od-event-log">
