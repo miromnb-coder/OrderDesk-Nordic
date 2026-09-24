@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { AppNav } from "@/components/product/AppNav";
+import { ProductShell } from "@/components/product/ProductShell";
 import "./product.css";
 
 export const metadata: Metadata = {
@@ -8,10 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function ProductLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="od-app">
-      <AppNav />
-      <main className="od-main">{children}</main>
-    </div>
-  );
+  return <ProductShell>{children}</ProductShell>;
 }
