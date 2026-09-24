@@ -84,7 +84,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: connection, error: connectionError } = await userClient
       .from("erp_connections")
-      .select("id, organization_id, provider, status, client_id, tenant_id, secret_ref, scopes, sales_order_endpoint, write_enabled, default_order_type, default_warehouse")
+      .select("id, organization_id, provider, status, client_id, tenant_id, secret_ref, scopes, sales_order_endpoint, write_enabled, default_order_type, default_warehouse, customer_authorized, visma_ai_written_consent, human_review_required, end_user_terms_ready, no_ai_training_ack, data_minimization_ack")
       .eq("organization_id", membership.organization_id)
       .eq("provider", "visma_net")
       .single();
@@ -110,6 +110,22 @@ Deno.serve(async (req: Request) => {
 
       if (connectionError || !connection) {
         return json({ error: "Visma Net connection is not configured" }, 400);
+      }
+
+      const complianceReady = [
+        connection.customer_authorized,
+        connection.visma_ai_written_consent,
+        connection.human_review_required,
+        connection.end_user_terms_ready,
+        connection.no_ai_training_ack,
+        connection.data_minimization_ack,
+      ].every(Boolean);
+
+      if (!complianceReady) {
+        return json({
+          error: "Compliance gate is incomplete. Live Visma writes are blocked.",
+          dry_run_available: true,
+        }, 409);
       }
 
       if (!connection.write_enabled) {
