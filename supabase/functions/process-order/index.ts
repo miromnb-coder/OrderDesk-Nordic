@@ -80,7 +80,30 @@ function parseOrder(text: string) {
   const notesIndex = rawLines.findIndex((line, index) => index > unitHeader && /^DELIVERY NOTES$/i.test(line));
   const lines: ParsedLine[] = [];
 
-  if (unitHeader >= 0) {
+  // First handle layout-preserved PDFs where each order row appears on one text line.
+  const rowPattern = /^\s*(\d+)\s+([A-Z0-9][A-Z0-9._\/-]{1,39})\s+(.+?)\s+(\d+(?:[.,]\d+)?)\s+([A-Za-z]{1,12})\s*$/;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const match = rawLine.match(rowPattern);
+    if (!match) continue;
+
+    const lineNumber = Number(match[1]);
+    const quantity = Number(match[4].replace(",", "."));
+
+    if (!Number.isInteger(lineNumber) || lineNumber <= 0 || !Number.isFinite(quantity) || quantity <= 0) {
+      continue;
+    }
+
+    lines.push({
+      line_number: lineNumber,
+      raw_sku: match[2],
+      raw_description: match[3].trim(),
+      raw_quantity: quantity,
+      raw_unit: match[5],
+    });
+  }
+
+  // Fallback for PDFs whose extractor emits each table cell as a separate line.
+  if (!lines.length && unitHeader >= 0) {
     const rowTokens = rawLines.slice(unitHeader + 1, notesIndex > unitHeader ? notesIndex : undefined);
     let i = 0;
 
@@ -208,7 +231,7 @@ Deno.serve(async (req: Request) => {
           order_date: parsed.orderDate,
           requested_delivery_date: parsed.requestedDeliveryDate,
           raw_customer_name: parsed.customerName,
-          extraction_version: "unpdf-rules-v1",
+          extraction_version: "unpdf-rules-v2",
           extraction_metadata: {
             pages: extraction.totalPages,
             extracted_lines: 0,
@@ -354,7 +377,7 @@ Deno.serve(async (req: Request) => {
         requested_delivery_date: parsed.requestedDeliveryDate,
         overall_confidence: overallConfidence,
         status: needsReview ? "needs_review" : "ready",
-        extraction_version: "unpdf-rules-v1",
+        extraction_version: "unpdf-rules-v2",
         extraction_metadata: {
           pages: extraction.totalPages,
           extracted_lines: parsed.lines.length,
