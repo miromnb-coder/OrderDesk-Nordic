@@ -1,8 +1,115 @@
-import Link from "next/link";
-import { demoOrderLines } from "@/lib/product-demo-data";
+"use client";
 
-export default async function OrderReviewPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import { supabase } from "@/lib/supabase-browser";
+
+type Order = {
+  id: string;
+  organization_id: string;
+  po_number: string | null;
+  source_file_name: string | null;
+  source_storage_path: string | null;
+  status: string;
+  overall_confidence: number | null;
+  received_at: string;
+  processed_at: string | null;
+  error_message: string | null;
+};
+
+type OrderLine = {
+  id: string;
+  line_number: number;
+  raw_sku: string | null;
+  raw_description: string | null;
+  raw_quantity: number;
+  raw_unit: string | null;
+  match_confidence: number | null;
+  review_status: string;
+  matched_product_id: string | null;
+};
+
+type EventRow = {
+  id: number;
+  event_type: string;
+  message: string;
+  created_at: string;
+};
+
+export default function OrderReviewPage() {
+  const params = useParams<{ id: string }>();
+  const [order, setOrder] = useState<Order | null>(null);
+  const [lines, setLines] = useState<OrderLine[]>([]);
+  const [events, setEvents] = useState<EventRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [sourceUrl, setSourceUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      if (!params.id) return;
+
+      const { data: orderRow } = await supabase
+        .from("orders")
+        .select("id, organization_id, po_number, source_file_name, source_storage_path, status, overall_confidence, received_at, processed_at, error_message")
+        .eq("id", params.id)
+        .maybeSingle();
+
+      if (!orderRow) {
+        setLoading(false);
+        return;
+      }
+
+      setOrder(orderRow as Order);
+
+      const [{ data: lineRows }, { data: eventRows }] = await Promise.all([
+        supabase
+          .from("order_lines")
+          .select("id, line_number, raw_sku, raw_description, raw_quantity, raw_unit, match_confidence, review_status, matched_product_id")
+          .eq("order_id", params.id)
+          .order("line_number", { ascending: true }),
+        supabase
+          .from("order_events")
+          .select("id, event_type, message, created_at")
+          .eq("order_id", params.id)
+          .order("created_at", { ascending: true }),
+      ]);
+
+      setLines((lineRows as OrderLine[] | null) ?? []);
+      setEvents((eventRows as EventRow[] | null) ?? []);
+
+      if (orderRow.source_storage_path) {
+        const { data: signed } = await supabase.storage
+          .from("order-files")
+          .createSignedUrl(orderRow.source_storage_path, 60 * 20);
+
+        if (signed?.signedUrl) setSourceUrl(signed.signedUrl);
+      }
+
+      setLoading(false);
+    }
+
+    load();
+  }, [params.id]);
+
+  if (loading) {
+    return <div className="od-page"><div className="od-empty-state">Loading order…</div></div>;
+  }
+
+  if (!order) {
+    return (
+      <div className="od-page">
+        <Link href="/app" className="od-back-link">← Orders</Link>
+        <div className="od-empty-state">
+          <strong>Order not found.</strong>
+          <span>This order is not available in your workspace.</span>
+        </div>
+      </div>
+    );
+  }
+
+  const title = order.po_number || order.source_file_name || "Incoming purchase order";
+  const extractionPending = lines.length === 0;
 
   return (
     <div className="od-page od-review-page">
@@ -10,12 +117,16 @@ export default async function OrderReviewPage({ params }: { params: Promise<{ id
         <div>
           <Link href="/app" className="od-back-link">← Orders</Link>
           <span className="od-kicker">PURCHASE ORDER</span>
-          <h1>PO #{id}</h1>
-          <p>Putkiurakointi Oy · received today at 08:31</p>
+          <h1>{title}</h1>
+          <p>Received {new Date(order.received_at).toLocaleString()} · status {order.status.replaceAll("_", " ")}</p>
         </div>
         <div className="od-review-actions">
-          <span className="od-status-pill od-status-needs_review">1 line needs review</span>
-          <button className="od-primary-button" type="button">Approve order</button>
+          <span className={`od-status-pill od-status-${order.status}`}>
+            {order.status.replaceAll("_", " ")}
+          </span>
+          <button className="od-primary-button" type="button" disabled={extractionPending}>
+            Approve order
+          </button>
         </div>
       </header>
 
@@ -26,23 +137,17 @@ export default async function OrderReviewPage({ params }: { params: Promise<{ id
               <span className="od-kicker">SOURCE</span>
               <h2>Original PDF</h2>
             </div>
-            <span className="od-file-chip">PO_14582.pdf</span>
+            <span className="od-file-chip">{order.source_file_name || "order.pdf"}</span>
           </div>
 
-          <div className="od-paper">
-            <span className="od-paper-brand">PUTKIURAKOINTI OY</span>
-            <h3>Purchase order #14582</h3>
-            <div className="od-paper-meta">
-              <span>24 Sep 2026</span>
-              <span>Delivery: Tampere</span>
+          {sourceUrl ? (
+            <iframe className="od-pdf-frame" src={sourceUrl} title="Uploaded purchase order PDF" />
+          ) : (
+            <div className="od-empty-state">
+              <strong>PDF unavailable.</strong>
+              <span>The source file could not be opened.</span>
             </div>
-            <div className="od-paper-lines">
-              <div><strong>PUMP-37A</strong><span>Grundfos Alpha2 25-60</span><b>2 pcs</b></div>
-              <div><strong>UPO-EL25</strong><span>Uponor elbow 25 mm</span><b>20 pcs</b></div>
-              <div><strong>VALVE-X12</strong><span>Danfoss valve 1/2 inch</span><b>5 pcs</b></div>
-              <div className="is-highlighted"><strong>CUSTOM-44</strong><span>Circulation pump 25-40</span><b>1 pcs</b></div>
-            </div>
-          </div>
+          )}
         </section>
 
         <section className="od-extracted-panel">
@@ -51,61 +156,71 @@ export default async function OrderReviewPage({ params }: { params: Promise<{ id
               <span className="od-kicker">ORDERDESK</span>
               <h2>Interpreted order</h2>
             </div>
-            <span className="od-confidence-chip">96% overall</span>
+            {order.overall_confidence !== null && (
+              <span className="od-confidence-chip">{order.overall_confidence}% overall</span>
+            )}
           </div>
 
-          <div className="od-customer-match">
-            <div>
-              <span>Customer</span>
-              <strong>Putkiurakointi Oy</strong>
-              <em>Visma customer 100284</em>
-            </div>
-            <span className="od-confidence-success">99%</span>
-          </div>
+          {order.error_message && (
+            <div className="od-pipeline-error">{order.error_message}</div>
+          )}
 
-          <div className="od-line-table">
-            <div className="od-line-header">
-              <span>Customer line</span>
-              <span>Matched catalogue item</span>
-              <span>Qty</span>
-              <span>Confidence</span>
-            </div>
-
-            {demoOrderLines.map((line) => (
-              <div className={`od-line-row ${line.status === "review" ? "needs-review" : ""}`} key={line.line}>
-                <div>
-                  <strong>{line.customerSku}</strong>
-                  <span>{line.description}</span>
-                </div>
-                <div>
-                  <strong>{line.internalSku}</strong>
-                  <span>{line.internalName}</span>
-                </div>
-                <div className="od-qty">{line.quantity} {line.unit}</div>
-                <div>
-                  <span className={line.status === "review" ? "od-confidence-warning" : "od-confidence-success"}>
-                    {line.confidence}%
-                  </span>
-                </div>
-                {line.status === "review" && (
-                  <div className="od-review-callout">
-                    <div>
-                      <span>Needs review</span>
-                      <strong>Is this the correct product?</strong>
-                    </div>
-                    <div className="od-review-buttons">
-                      <button type="button">Search catalogue</button>
-                      <button type="button" className="is-dark">Confirm match</button>
-                    </div>
-                  </div>
-                )}
+          {extractionPending ? (
+            <div className="od-pipeline-state">
+              <span className="od-kicker">PIPELINE STATUS</span>
+              <h3>PDF ingestion is working.</h3>
+              <p>
+                The file has been authenticated, stored privately and validated as a real PDF.
+                Structured order extraction is the next processing stage and has not been connected yet.
+              </p>
+              <div className="od-pipeline-steps">
+                <div className="is-done"><span>01</span><strong>Upload</strong><em>Complete</em></div>
+                <div className="is-done"><span>02</span><strong>PDF validation</strong><em>Complete</em></div>
+                <div><span>03</span><strong>Structured extraction</strong><em>Next</em></div>
+                <div><span>04</span><strong>Product matching</strong><em>Waiting</em></div>
               </div>
-            ))}
-          </div>
+            </div>
+          ) : (
+            <div className="od-line-table">
+              <div className="od-line-header">
+                <span>Customer line</span>
+                <span>Matched product</span>
+                <span>Qty</span>
+                <span>Confidence</span>
+              </div>
+              {lines.map((line) => (
+                <div className="od-line-row" key={line.id}>
+                  <div>
+                    <strong>{line.raw_sku || `Line ${line.line_number}`}</strong>
+                    <span>{line.raw_description || "No description"}</span>
+                  </div>
+                  <div>
+                    <strong>{line.matched_product_id ? "Matched catalogue item" : "Not matched yet"}</strong>
+                    <span>{line.review_status.replaceAll("_", " ")}</span>
+                  </div>
+                  <div className="od-qty">{line.raw_quantity} {line.raw_unit || ""}</div>
+                  <div>
+                    {line.match_confidence !== null
+                      ? <span className="od-confidence-success">{line.match_confidence}%</span>
+                      : <span>—</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
-          <div className="od-memory-note">
-            <span>Customer memory</span>
-            Confirming the highlighted line will save <strong>CUSTOM-44 → GRU-99411175</strong> for Putkiurakointi Oy.
+          <div className="od-event-log">
+            <span className="od-kicker">AUDIT LOG</span>
+            {events.length === 0 ? (
+              <p>No events recorded yet.</p>
+            ) : (
+              events.map((event) => (
+                <div key={event.id}>
+                  <time>{new Date(event.created_at).toLocaleTimeString()}</time>
+                  <strong>{event.message}</strong>
+                </div>
+              ))
+            )}
           </div>
         </section>
       </div>
