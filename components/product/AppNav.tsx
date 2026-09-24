@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import { supabase } from "@/lib/supabase-browser";
 
 const items = [
   { href: "/app", label: "Orders", mark: "01" },
@@ -11,12 +13,40 @@ const items = [
 
 export function AppNav() {
   const pathname = usePathname();
+  const [workspaceName, setWorkspaceName] = useState("OrderDesk workspace");
+
+  useEffect(() => {
+    async function loadWorkspace() {
+      const { data: membership } = await supabase
+        .from("organization_members")
+        .select("organization_id")
+        .limit(1)
+        .maybeSingle();
+
+      if (!membership) return;
+
+      const { data: organization } = await supabase
+        .from("organizations")
+        .select("name")
+        .eq("id", membership.organization_id)
+        .maybeSingle();
+
+      if (organization?.name) setWorkspaceName(organization.name);
+    }
+
+    loadWorkspace();
+  }, []);
+
+  async function signOut() {
+    await supabase.auth.signOut();
+    window.location.href = "/app/login";
+  }
 
   return (
     <aside className="od-sidebar">
       <div>
         <Link href="/" className="od-product-brand">OrderDesk</Link>
-        <p className="od-workspace-label">Nordic Wholesale Oy</p>
+        <p className="od-workspace-label">{workspaceName}</p>
       </div>
 
       <nav className="od-nav" aria-label="Product navigation">
@@ -36,10 +66,10 @@ export function AppNav() {
       </nav>
 
       <div className="od-sidebar-foot">
-        <div className="od-user-dot">MN</div>
+        <div className="od-user-dot">OD</div>
         <div>
           <strong>Pilot workspace</strong>
-          <span>Human-reviewed mode</span>
+          <button type="button" className="od-signout" onClick={signOut}>Sign out</button>
         </div>
       </div>
     </aside>
