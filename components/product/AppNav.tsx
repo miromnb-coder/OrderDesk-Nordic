@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase-browser";
 
 const items = [
   { href: "/app", label: "Orders", mark: "01" },
-  { href: "/app/customers/putkiurakointi", label: "Customer memory", mark: "02" },
+  { href: "/app/customers", label: "Customer memory", mark: "02" },
   { href: "/app/integrations", label: "Integrations", mark: "03" },
 ];
 
