@@ -15,6 +15,8 @@ type Connection = {
 export default function IntegrationsPage() {
   const [connection, setConnection] = useState<Connection | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sampleState, setSampleState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [sampleMessage, setSampleMessage] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -28,6 +30,24 @@ export default function IntegrationsPage() {
     }
     load();
   }, []);
+
+  async function loadSampleCatalogue() {
+    setSampleState("loading");
+    setSampleMessage("");
+
+    const { data, error } = await supabase.rpc("seed_orderdesk_sample_catalog");
+
+    if (error) {
+      setSampleState("error");
+      setSampleMessage(error.message);
+      return;
+    }
+
+    setSampleState("done");
+    setSampleMessage(
+      `Sample catalogue ready: ${data?.products ?? 4} products and ${data?.known_mappings ?? 3} known customer mappings.`
+    );
+  }
 
   return (
     <div className="od-page">
@@ -59,6 +79,30 @@ export default function IntegrationsPage() {
           <p>The data model is ready for a Visma Net connection. Credentials are not stored in browser-accessible tables.</p>
           <button className="od-secondary-button" type="button" disabled>Connection setup next</button>
         </div>
+      </section>
+
+      <section className="od-sample-card">
+        <div>
+          <span className="od-kicker">PIPELINE TEST DATA</span>
+          <h2>Load the sample catalogue</h2>
+          <p>
+            Adds one fictional customer, four catalogue products and three known customer SKU mappings
+            to your current workspace. Use it with the OrderDesk test purchase order PDF.
+          </p>
+        </div>
+        <button
+          className="od-secondary-button"
+          type="button"
+          onClick={loadSampleCatalogue}
+          disabled={sampleState === "loading"}
+        >
+          {sampleState === "loading" ? "Loading…" : sampleState === "done" ? "Sample data loaded" : "Load sample catalogue"}
+        </button>
+        {sampleMessage && (
+          <p className={sampleState === "error" ? "od-auth-error" : "od-auth-message"} role="status">
+            {sampleMessage}
+          </p>
+        )}
       </section>
     </div>
   );
